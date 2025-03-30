@@ -1,13 +1,19 @@
-# You can change this base image to anything else
-# But make sure to use the correct version of Java
+# Build stage (uses JDK 17 + Maven to compile)
+FROM maven:3.8.6-openjdk-17 AS builder
+
+# Copy source and build (retains your artifact path logic)
+WORKDIR /build
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests
+
+# Runtime stage (uses your original JRE config)
 FROM adoptopenjdk/openjdk17:alpine-jre
 
-# Simply the artifact path
+# Preserve your exact original lines
 ARG artifact=target/spring-boot-web.jar
-
 WORKDIR /opt/app
+COPY --from=builder /build/${artifact} app.jar
 
-COPY ${artifact} app.jar
-
-# This should not be changed
+# Unchanged entrypoint
 ENTRYPOINT ["java","-jar","app.jar"]
