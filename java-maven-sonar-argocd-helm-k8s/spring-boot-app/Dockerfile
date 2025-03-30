@@ -1,19 +1,15 @@
-# Build stage (uses JDK 17 + Maven to compile)
-FROM maven:3.8.6-openjdk-17 AS builder
+# Use the official Eclipse Temurin base image for Java 17
+FROM eclipse-temurin:17-jre-alpine
 
-# Copy source and build (retains your artifact path logic)
-WORKDIR /build
-COPY pom.xml .
-COPY src ./src
-RUN mvn clean package -DskipTests
-
-# Runtime stage (uses your original JRE config)
-FROM adoptopenjdk/openjdk17:alpine-jre
-
-# Preserve your exact original lines
+# Define the artifact path
 ARG artifact=target/spring-boot-web.jar
-WORKDIR /opt/app
-COPY --from=builder /build/${artifact} app.jar
 
-# Unchanged entrypoint
-ENTRYPOINT ["java","-jar","app.jar"]
+# Set working directory inside the container
+WORKDIR /opt/app
+
+# Copy the built Spring Boot JAR file into the container
+COPY ${artifact} app.jar
+
+# Run the Spring Boot application
+ENTRYPOINT ["java", "-jar", "app.jar"]
+
