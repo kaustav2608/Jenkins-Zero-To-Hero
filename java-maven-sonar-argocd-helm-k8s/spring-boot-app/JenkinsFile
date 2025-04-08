@@ -6,79 +6,60 @@ pipeline {
     }
   }
   stages {
-    stage('Check Versions') { // Optional: Good for debugging
-        steps {
-            sh 'java -version'
-            sh 'mvn -v'
-        }
-    }
     stage('Checkout') {
       steps {
-        echo 'Checking out code...'
-        // Assuming Pipeline is configured 'Pipeline script from SCM' which performs checkout automatically.
-        // If not, add: checkout scm
-        // Or uncomment and fix your specific git step:
-        // git branch: 'main', url: 'https://github.com/kaustav2608/Jenkins-Zero-To-Hero.git' // Ensure this is your correct repo
+        sh 'echo passed'
+        //git branch: 'main', url: 'https://github.com/kaustav2608/Jenkins-Zero-To-Hero.git'
       }
     }
     stage('Build and Test') {
       steps {
-        dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') { // Use dir step
-            sh 'mvn clean package' // Package includes compile and test
-        }
+        sh 'ls -ltr'
+        // build the project and create a JAR file
+        sh 'cd java-maven-sonar-argocd-helm-k8s/spring-boot-app && mvn clean package'
       }
     }
     stage('Static Code Analysis') {
-      // No environment block needed here if URL is hardcoded below
+      environment {
+        SONAR_URL = "http://13.233.83.141:9000"
+      }
       steps {
-        dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') { // Use dir step
-            withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
-              // Add back verify and use the credential variable for the token
-              sh 'mvn clean verify sonar:sonar -Dsonar.host.url=http://65.2.148.65:9000 -Dsonar.token=${SONAR_AUTH_TOKEN}'
-            }
+        withCredentials([string(credentialsId: 'sonarqube', variable: 'SONAR_AUTH_TOKEN')]) {
+          sh 'cd java-maven-sonar-argocd-helm-k8s/spring-boot-app && mvn sonar:sonar -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.host.url=${SONAR_URL}'
         }
       }
     }
     stage('Build and Push Docker Image') {
       environment {
-        // Only define variables needed directly here
         DOCKER_IMAGE = "abhishekf5/ultimate-cicd:${BUILD_NUMBER}"
+        // DOCKERFILE_LOCATION = "java-maven-sonar-argocd-helm-k8s/spring-boot-app/Dockerfile"
+        REGISTRY_CREDENTIALS = credentials('docker-cred')
       }
       steps {
-        dir('java-maven-sonar-argocd-helm-k8s/spring-boot-app') { // Use dir step
-            script {
-                // Use docker.build for better integration
-                def dockerImage = docker.build("${DOCKER_IMAGE}", ".") // '.' specifies build context is current dir
-                docker.withRegistry('https://index.docker.io/v1/', 'docker-cred') { // Use credential ID directly
-                    dockerImage.push()
-                }
+        script {
+            sh 'cd java-maven-sonar-argocd-helm-k8s/spring-boot-app && docker build -t ${DOCKER_IMAGE} .'
+            def dockerImage = docker.image("${DOCKER_IMAGE}")
+            docker.withRegistry('https://index.docker.io/v1/', "docker-cred") {
+                dockerImage.push()
             }
         }
       }
     }
     stage('Update Deployment File') {
         environment {
-            GIT_REPO_NAME = "Jenkins-Zero-To-Hero" // Make sure this is the correct repo name
-            GIT_USER_NAME = "iam-veeramalla"     // Make sure this is the correct user/org name
+            GIT_REPO_NAME = "Jenkins-Zero-To-Hero"
+            GIT_USER_NAME = "iam-veeramalla"
         }
         steps {
             withCredentials([string(credentialsId: 'github', variable: 'GITHUB_TOKEN')]) {
                 sh '''
-                    # Ensure git commands run in the root of the checkout
-                    git config --global user.email "abhishek.veeramalla@example.com" # Use a real or distinct email
-                    git config --global user.name "Abhishek Veeramalla (Jenkins)" # Be specific about the committer
-                    
-                    # Ensure path to deployment file is correct from workspace root
+                    git config user.email "abhishek.xyz@gmail.com"
+                    git config user.name "Abhishek Veeramalla"
+                    BUILD_NUMBER=${BUILD_NUMBER}
                     sed -i "s/replaceImageTag/${BUILD_NUMBER}/g" java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
                     git add java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
-                    
-                    # Check if there are changes to commit
-                    if git diff --staged --quiet; then
-                      echo "No changes to commit."
-                    else
-                      git commit -m "Update deployment image to version ${BUILD_NUMBER} [ci skip]" # Add [ci skip] if needed
-                      git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}.git HEAD:main
-                    fi
+                    git commit -m "Update deployment image to version ${BUILD_NUMBER}"
+                    git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
                 '''
             }
         }
